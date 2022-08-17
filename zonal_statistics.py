@@ -8,15 +8,39 @@ import matplotlib.pyplot as plt
 from rasterstats import zonal_stats
 
 def usage():
+    print('Usage: python zonal_statistics.py [OPTIONS]')
+    print('Options:')
+    print('-f, --file        [required] Path to the raster file')
+    print('-z, --zones       [required] Path to the shapefile containing the features')
+    print('                             on which zonal statistics are performed.')
+    print('                             Alternatively, user can also provide CSV file')
+    print('                             containing lon and lat of the points.')
+    print('                             Buffer zones with particular radius will be')
+    print('                             created if the supplied features are points.')
+    print('-r, --rad                    Radius of the buffer zones in metre. For')
+    print('                             multiple radii, use comma as the separator.')
+    print('-b, --band                   For multiband raster, the process can be done')
+    print('                             to the bands with specific indexes [1,...].')
+    print('                             Otherwise, only the first band is processed.')
+    print('-o, --output                 Output filename')
+    print('-s, --stats                  Statistical functions to use. Default: min, max,')
+    print('                             mean, std.')
+    print('-p, --plot                   Visualize the output, e.g. the features with the')
+    print('                             first statistics as the color scaler.')
+    print('-h, --help                   Show this message and exit.')
+    print('')
     print('python zonal_statistics.py -f raster_file -z zones -r buffer_radii')
-    print('                           -s statistics -b band_num')
-    print('                           -p -o output_file')
+    print('                           -s statistics -b band_num -o output_file')
+    print('                           -p -h')
+    print('Example: python zonal_statistics.py -f tmp.tif -z tmp.shp -r 1000,2000 -s sum')
+    print('                                    -b 1,3 -p')
     
 def main(argv=None):
     if argv == None:
         argv = sys.argv
     
     create_buffer = False
+    buffer = [1000]
     cnt = 1
     band_indexes = [1]
     output_file = 'output.csv'
@@ -25,7 +49,7 @@ def main(argv=None):
 
     i = 1
     while i < len(argv):
-        if (argv[i] == '-f'):
+        if (argv[i] in ['-f', '--file']):
             raster_file = argv[i+1]
             if not(os.path.isfile(raster_file)):
                 print('Raster file is not found')
@@ -35,7 +59,7 @@ def main(argv=None):
                 cnt = src.meta['count']
             band_indexes = np.arange(1, cnt+1)
                 
-        elif (argv[i] == '-z'):
+        elif (argv[i] in ['-z', '--zones']):
             zones_file = argv[i+1]
             if not(os.path.isfile(zones_file)):
                 print('Zone shapefile is not found')
@@ -66,7 +90,7 @@ def main(argv=None):
                 gdf['geometry'] = pts
                 create_buffer = True
                 
-        elif (argv[i] == '-r'):
+        elif (argv[i] in ['-r', '--rad']):
             buffer = argv[i+1].replace(' ','').split(',')
             if (isinstance(buffer,str)):
                 buffer = [buffer]
@@ -85,23 +109,27 @@ def main(argv=None):
                     gdf2 = pd.concat([gdf2,df], ignore_index=False)
                 gdf2.to_crs(crs).to_file('tmp_zones.shp', index=False)
                     
-        elif (argv[i] == '-b'):
+        elif (argv[i] in ['-b', '--band']):
             band_indexes = argv[i+1].replace(' ','').split(',')
             if (isinstance(band_indexes,str)):
                 band_indexes = [band_indexes]
             band_indexes = np.array(band_indexes, dtype=int)
             
-        elif (argv[i] == '-o'):
+        elif (argv[i] in ['-o', '--output']):
             output_file = argv[i+1]
             
-        elif (argv[i] == '-p'):
+        elif (argv[i] in ['-p', '--plot']):
             do_plot = True
         
-        elif (argv[i] == '-s'):
+        elif (argv[i] in ['-s', '--stats']):
             stats = argv[i+1].replace(' ','').split(',')
             if (isinstance(stats,str)):
                 stats = [stats]
-                
+        
+        elif (argv[i] in ['-h','--help']):
+            usage()
+            sys.exit(1)
+            
         i += 1
         
     if create_buffer:
