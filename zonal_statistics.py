@@ -29,9 +29,6 @@ def usage():
     print('                             first statistics as the color scaler.')
     print('-h, --help                   Show this message and exit.')
     print('')
-    print('python zonal_statistics.py -f raster_file -z zones -r buffer_radii')
-    print('                           -s statistics -b band_num -o output_file')
-    print('                           -p -h')
     print('Example: python zonal_statistics.py -f tmp.tif -z tmp.shp -r 1000,2000 -s sum')
     print('                                    -b 1,3 -p')
     
