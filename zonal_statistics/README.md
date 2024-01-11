@@ -48,3 +48,6 @@ The output files are kept in `geom/` and `out/` folders. Geopackage (GPKG) conta
 
 ### Zonal Statistics Wrapper
 `zonal_statistics.py` is a script to extract zonal statistics from raster input based on the list of features provided. Copy the script to the working directory to use it. Type `python zonal_statistics.py --help` to know how to use this script.
+
+___
+Contact: <rp1y21@soton.ac.uk>
