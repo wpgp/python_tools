@@ -1,4 +1,3 @@
-print('Loading packages')
 import sys
 import os
 import numpy as np
@@ -7,7 +6,9 @@ import geopandas as gpd
 from scipy.spatial import Voronoi
 from shapely.geometry import LineString
 from shapely.ops import polygonize, linemerge, unary_union
-from tqdm import tqdm
+
+import warnings
+warnings.filterwarnings("ignore")
 
 def usage():
     print('Usage: python get_buffer.py -f path.csv -r 1000 [OPTIONS]')
@@ -21,7 +22,8 @@ def usage():
     print('-c, --clip                   Perform clipping to overlapping buffers. ')
     print('-h, --help                   Show this message and exit.')
     print('')
-    print('Example: python get_buffer.py -f path.csv -a add.csv -r 10 -o buffers -c')
+    print('Example: python get_buffer.py -f sample/points_1.csv -a sample/points_2.csv')
+    print('                              -r 10 -o buffer -clip')
     print()
 
 def get_input(path_, rad_=5000):
@@ -34,7 +36,7 @@ def get_input(path_, rad_=5000):
     # of the buffer is added.
 
     if not(os.path.isfile(path_)):
-        print('Input file is not found.')
+        print('Input file is not found:', path_)
         sys.exit(1)
     
     ext = path_.split('.')[-1]
@@ -55,6 +57,7 @@ def get_input(path_, rad_=5000):
         
         gdf = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df[lon], df[lat]), crs='epsg:4326')
         buf = gdf.to_crs(3857).buffer(rad_)
+        gdf = gdf.drop(columns=[lon,lat])
         gdf['area'] = 1e-6*buf.area
         gdf['lon'] = gdf.geometry.x
         gdf['lat'] = gdf.geometry.y
@@ -71,6 +74,15 @@ def get_input(path_, rad_=5000):
         if (geom_type == 'POINT'):
             print('Creating buffer around points')
             buf = gdf.to_crs(3857).buffer(rad_)
+
+            cols = gdf.columns.values
+            lat = [c if c.lower() in ['lat','latitude','y'] else 'NA' for c in cols]
+            lat = list(filter(('NA').__ne__, lat))[0]
+            
+            lon = [c if c.lower() in ['lon','long','longitude','x'] else 'NA' for c in cols]
+            lon = list(filter(('NA').__ne__, lon))[0]
+
+            gdf = gdf.drop(columns=[lon,lat])
             gdf['area'] = 1e-6*buf.area
             gdf['lon'] = gdf.geometry.x
             gdf['lat'] = gdf.geometry.y
@@ -85,7 +97,7 @@ def get_voronoi(gdf_):
     # point/centroid.
 
     vor = None
-    print('Creating voronoi tasselations')
+    print('Creating Voronoi diagram')
     b = gdf_.bounds.describe()
     cx = gdf_['lon']
     cy = gdf_['lat']
@@ -139,12 +151,12 @@ def get_buffer(argv=None):
         if (arg in ['-i', '--input']):
             infile = argv[i+suf]
             if not(os.path.isfile(infile)):
-                print('Input file is not found.')
+                print('Input file is not found:', infile)
                 sys.exit(1)
         elif(arg in ['-a', '--add']):
             addfile = argv[i+suf]
             if not(os.path.isfile(addfile)):
-                print('Additional file is not found.')
+                print('Additional file is not found:', addfile)
                 sys.exit(1)
         elif(arg in ['-r', '--rad']):
             rad = float(argv[i+suf])
@@ -156,7 +168,6 @@ def get_buffer(argv=None):
             usage()
             sys.exit(1)
 
-        
     gdf0 = get_input(infile, rad_=1000*rad)
     gdf0['remark'] = 'old'
     pts  = gdf0.copy()
@@ -188,7 +199,7 @@ def get_buffer(argv=None):
                         non = non_overlaps(item.geometry, g1.geometry.tolist())
                         gdf0.loc[j,'geometry'] = non
                         gdf0.loc[j,'remark'] = 'new'
-            gdf1['geometry'] = clipped
+            
         gdf0 = pd.concat([gdf0, gdf1], ignore_index=True).reset_index(drop=True)
         
     elif clip:
@@ -208,7 +219,8 @@ def get_buffer(argv=None):
     if clip:
         suffix = '_clipped'
         
-    print('Saving output file')
+    gdf0['area'] = 1e-6*gdf0.to_crs(3857).area
+    print('Saving geometry file')    
     gdf0.to_file(f'{outfile}_{rad:.0f}km{suffix}.gpkg', index=False)
     
 if __name__ == '__main__':
