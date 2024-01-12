@@ -68,9 +68,12 @@ def main():
             outfile = f'out/pop_{rad:.0f}km{buffer_type}.csv'
             
             if do_update:
-                param = {'input':infile, 'add':location_new, 'rad':rad, 'output':'geom/buffer', 'clip':(buffer_type=='_clipped')}
+                param = {'input':infile, 'add':location_new, 'rad':rad, 'output':'geom/buffer'}
             else:
-                param = {'input':location, 'rad':rad, 'output':'geom/buffer', 'clip':(buffer_type=='_clipped')}
+                param = {'input':location, 'rad':rad, 'output':'geom/buffer'}
+
+            if (buffer_type=='_clipped'):
+                param['clip'] = True
             
             get_buffer.get_buffer(param)
             buffer = gpd.read_file(infile)
