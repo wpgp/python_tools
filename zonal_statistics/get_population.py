@@ -34,24 +34,23 @@ def get_population(zones, raster_path, min_area=1, interpolate='nearest'):
     small = zones['area'] < min_area
     zones['pop'] = np.nan
     zones['cell_count'] = 0
-
-    pts = gpd.points_from_xy(zones[small]['lon'], zones[small]['lat'], crs='epsg:4326')
     
-    pop_small = point_query(pts, raster_path, interpolate=interpolate)
-
     res = zonal_stats(zones[~small], raster_path, stats=['count'], add_stats={'pop':np.nansum})
     cnt_large = np.array([a['count'] for a in res])
     pop_large = np.array([a['pop'] for a in res])
 
     fac = np.divide(zones[~small]['area'].values, cnt_large, where=(cnt_large>0))
-    pop_small = zones[small]['area'].values*np.array(pop_small)
     pop_large = fac*np.array(pop_large)
-
-    zones.loc[small, 'pop'] = pop_small
     zones.loc[~small, 'pop'] = pop_large
-
-    zones.loc[small, 'cell_count'] = 1
     zones.loc[~small, 'cell_count'] = cnt_large
+
+    if (small.sum() > 0):
+        pts = gpd.points_from_xy(zones[small]['lon'], zones[small]['lat'], crs='epsg:4326')
+        pop_small = point_query(pts, raster_path, interpolate=interpolate)
+        pop_small = zones[small]['area'].values*np.array(pop_small)
+        zones.loc[small, 'pop'] = pop_small
+        zones.loc[small, 'cell_count'] = 1
+    
     return zones
 
 def main():
@@ -71,13 +70,12 @@ def main():
                 param = {'input':infile, 'add':location_new, 'rad':rad, 'output':'geom/buffer'}
             else:
                 param = {'input':location, 'rad':rad, 'output':'geom/buffer'}
-
-            if (buffer_type=='_clipped'):
+            if buffer_type == '_clipped':
                 param['clip'] = True
-            
             get_buffer.get_buffer(param)
             buffer = gpd.read_file(infile)
 
+            print('Processing:', outfile)
             if do_update:
                 old_df = pd.read_csv(outfile)
                 old_df['remark'] = 'old'
@@ -88,6 +86,8 @@ def main():
                 pop_df = pd.DataFrame(buffer).drop(columns=['geometry'])
             else:
                 pop_df = pd.DataFrame(buffer).drop(columns=['geometry'])
+
+            print('n-rows:', len(buffer))
             
             pop_df['remark'] = 'new'
             for year in range(year_start, year_end+1):
@@ -97,14 +97,16 @@ def main():
                     print('Population raster cannot be found:', pop_raster)
                     sys.exit()
                 
+                print('Performing zonal statistics:', year)
                 pop = get_population(buffer, pop_raster)
                 pop_df[f'pop_{year}'] = pop['pop'].values
                 pop_df['cell_count'] = pop['cell_count'].values
                 
             if do_update:
                 pop_df = pd.concat([old_df, pop_df], ignore_index=True)
+                pop_df = pop_df.drop_duplicates(subset=['LOCATION_ID'], keep='last')
 
-            print('Saving population table')
+            print('Saving population table:', outfile)
             pop_df.to_csv(outfile, index=False)
 
             if versioning:

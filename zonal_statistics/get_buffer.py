@@ -40,7 +40,7 @@ def get_input(path_, rad_=5000):
         sys.exit(1)
     
     ext = path_.split('.')[-1]
-    print('Reading input file')
+    print('Reading input file:', path_)
 
     if (ext in ['csv', 'CSV', 'xls', 'XLS', 'xlsx', 'XLSX']):
         if (ext in ['csv', 'CSV']):
@@ -66,7 +66,7 @@ def get_input(path_, rad_=5000):
     elif (ext in ['gpkg', 'GPKG', 'shp', 'SHP', 'geojson', 'json']):
         gdf = gpd.read_file(path_)
         crs = gdf.crs.srs
-        if (crs != 'epsg:4326'):
+        if not(crs in ['epsg:4326', 'EPSG:4326']):
             print(f'Update CRS from {crs} to epsg:4326')
             gdf = gdf.to_crs(4326)
             
@@ -201,6 +201,8 @@ def get_buffer(argv=None):
                         gdf0.loc[j,'remark'] = 'new'
             
         gdf0 = pd.concat([gdf0, gdf1], ignore_index=True).reset_index(drop=True)
+        gdf0 = gdf0.drop_duplicates(subset=['LOCATION_ID'], keep='last')
+        gdf0 = gpd.GeoDataFrame(gdf0, geometry='geometry')
         
     elif clip:
         # Perform clipping to the buffers to avoid overlaps.
