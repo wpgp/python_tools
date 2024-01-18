@@ -47,7 +47,7 @@ def get_population(zones, raster_path, min_area=1, interpolate='nearest'):
     if (small.sum() > 0):
         pts = gpd.points_from_xy(zones[small]['lon'], zones[small]['lat'], crs='epsg:4326')
         pop_small = point_query(pts, raster_path, interpolate=interpolate)
-        pop_small = zones[small]['area'].values*np.array(pop_small)
+        pop_small = zones[small]['area'].values*np.array(pop_small, dtype=float)
         zones.loc[small, 'pop'] = pop_small
         zones.loc[small, 'cell_count'] = 1
     
@@ -67,13 +67,16 @@ def main():
             outfile = f'out/pop_{rad:.0f}km{buffer_type}.csv'
             
             if do_update:
-                param = {'input':infile, 'add':location_new, 'rad':rad, 'output':'geom/buffer'}
+                param = {'input':infile, 'add':location, 'rad':rad, 'output':'geom/buffer'}
             else:
                 param = {'input':location, 'rad':rad, 'output':'geom/buffer'}
             if buffer_type == '_clipped':
                 param['clip'] = True
+            
             get_buffer.get_buffer(param)
             buffer = gpd.read_file(infile)
+            #if not('remark' in buffer.columns.tolist()):
+            #    buffer['remark'] = 'old'
 
             print('Processing:', outfile)
             if do_update:
@@ -87,7 +90,7 @@ def main():
             else:
                 pop_df = pd.DataFrame(buffer).drop(columns=['geometry'])
 
-            print('n-rows:', len(buffer))
+            print('Number of zones:', len(buffer))
             
             pop_df['remark'] = 'new'
             for year in range(year_start, year_end+1):

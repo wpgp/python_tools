@@ -3,6 +3,7 @@ import os
 import numpy as np
 import pandas as pd
 import geopandas as gpd
+from tqdm import tqdm
 from scipy.spatial import Voronoi
 from shapely.geometry import LineString
 from shapely.ops import polygonize, linemerge, unary_union
@@ -11,7 +12,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 def usage():
-    print('Usage: python get_buffer.py -f path.csv -r 1000 [OPTIONS]')
+    print('Usage: python get_buffer.py -i path.csv -r 1000 [OPTIONS]')
     print('Options:')
     print('-i, --input       [required] Path to the input file')
     print('-a, --add                    Path to the file containing additional points')
@@ -22,7 +23,7 @@ def usage():
     print('-c, --clip                   Perform clipping to overlapping buffers. ')
     print('-h, --help                   Show this message and exit.')
     print('')
-    print('Example: python get_buffer.py -f sample/points_1.csv -a sample/points_2.csv')
+    print('Example: python get_buffer.py -i sample/points_1.csv -a sample/points_2.csv')
     print('                              -r 10 -o buffer -clip')
     print()
 
@@ -44,9 +45,9 @@ def get_input(path_, rad_=5000):
 
     if (ext in ['csv', 'CSV', 'xls', 'XLS', 'xlsx', 'XLSX']):
         if (ext in ['csv', 'CSV']):
-            df = pd.read_csv(path_)
+            df = pd.read_csv(path_).dropna()
         else:
-            df = pd.read_excel(path_)
+            df = pd.read_excel(path_).dropna()
     
         cols = df.columns.values
         lat = [c if c.lower() in ['lat','latitude','y'] else 'NA' for c in cols]
@@ -182,8 +183,8 @@ def get_buffer(argv=None):
         if clip:
             pts = pd.concat([gdf0, gdf1], ignore_index=True).reset_index(drop=True)
             vor = get_voronoi(pts)
-            print('Clipping additional buffers')
-            for i,row in gdf1.iterrows():
+            print(f'Clipping additional buffers: {len(gdf1)}++')
+            for i,row in tqdm(gdf1.iterrows(), total=gdf1.shape[0]):
                 b0 = row['geometry'].bounds
                 g1 = vor.cx[b0[0]:b0[2], b0[1]:b0[3]]
                 if (len(g1) > 0):
@@ -208,8 +209,8 @@ def get_buffer(argv=None):
         # Perform clipping to the buffers to avoid overlaps.
         
         vor = get_voronoi(pts)
-        print('Clipping buffers')
-        for i,row in gdf0.iterrows():
+        print(f'Clipping buffers: {len(gdf0)}')
+        for i,row in tqdm(gdf0.iterrows(), total=gdf1.shape[0]):
             b0 = row['geometry'].bounds
             g1 = vor.cx[b0[0]:b0[2], b0[1]:b0[3]]
             if (len(g1) > 0):
