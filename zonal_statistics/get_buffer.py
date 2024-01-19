@@ -3,6 +3,7 @@ import os
 import numpy as np
 import pandas as pd
 import geopandas as gpd
+import fiona
 from tqdm import tqdm
 from scipy.spatial import Voronoi
 from shapely.geometry import LineString
@@ -63,8 +64,10 @@ def get_input(path_, rad_=5000):
         gdf['lon'] = gdf.geometry.x
         gdf['lat'] = gdf.geometry.y
         gdf['geometry'] = buf.to_crs(4326)
+        layer = ''
         
     elif (ext in ['gpkg', 'GPKG', 'shp', 'SHP', 'geojson', 'json']):
+        layer = fiona.listlayers(path_)[0]
         gdf = gpd.read_file(path_)
         crs = gdf.crs.srs
         if not(crs in ['epsg:4326', 'EPSG:4326']):
@@ -89,7 +92,7 @@ def get_input(path_, rad_=5000):
             gdf['lat'] = gdf.geometry.y
             gdf['geometry'] = buf.to_crs(4326)
         
-    return gdf
+    return gdf, layer
 
 def get_voronoi(gdf_):
     # This function creates voronoi tasselations based on the
@@ -169,7 +172,7 @@ def get_buffer(argv=None):
             usage()
             sys.exit(1)
 
-    gdf0 = get_input(infile, rad_=1000*rad)
+    gdf0, layer = get_input(infile, rad_=1000*rad)
     gdf0['remark'] = 'old'
     pts  = gdf0.copy()
     
@@ -178,7 +181,7 @@ def get_buffer(argv=None):
         # the additional file. The buffers affected by this 
         # addition will be re-clipped.
 
-        gdf1 = get_input(addfile, rad_=1000*rad)
+        gdf1, _ = get_input(addfile, rad_=1000*rad)
         gdf1['remark'] = 'new'
         if clip:
             pts = pd.concat([gdf0, gdf1], ignore_index=True).reset_index(drop=True)
@@ -222,9 +225,15 @@ def get_buffer(argv=None):
     if clip:
         suffix = '_clipped'
         
+    print('Processed buffers:')
+    print('Old:', np.sum(gdf0['remark'] == 'old'))
+    print('New:', np.sum(gdf0['remark'] == 'new'))
+
+    gdf0 = gdf0.reset_index(drop=True)
     gdf0['area'] = 1e-6*gdf0.to_crs(3857).area
     print('Saving geometry file')    
-    gdf0.to_file(f'{outfile}_{rad:.0f}km{suffix}.gpkg', index=False)
+    gdf0.to_file(f'{outfile}_{rad:.0f}km{suffix}.gpkg', index=False, 
+                 mode='w', driver='GPKG', layer=layer)
     
 if __name__ == '__main__':
     sys.exit(get_buffer())
