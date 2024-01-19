@@ -1,10 +1,9 @@
 ### CONFIGURATION ###
-year_start = 2023
+year_start = 2020
 year_end = 2023
-radii = [1,2,5]
-location = 'geom/buffer_5km_clipped.gpkg'
-location_new = 'sample/points_2.csv'
-raster_file = '../../ACLED/data/global_ppp_{year}_1km_UNadj_constrained.tif'
+radii = [1,5]
+location = 'sample/new_20240119.csv'
+raster_file = '../pop/constrained/global_ppp_{year}_1km_UNadj_constrained.tif'
 do_update = True
 clipped_only = True
 versioning = True
