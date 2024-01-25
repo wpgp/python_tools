@@ -1,6 +1,6 @@
 ## Zonal Statistics
 
-This folder contains several scripts for performing zonal statistics around points, especially for extracting population count from the gridded population data. Most of the tools are built upon the following packages such that installing them are necessary:
+This folder contains several scripts for performing zonal statistics around points, especially for extracting population count from the gridded population data. Most of the tools are built upon the following packages such that installing them is necessary:
 - [numpy](https://numpy.org)
 - [pandas](https://pandas.pydata.org)
 - [fiona](https://fiona.readthedocs.io)
@@ -50,4 +50,4 @@ The output files are kept in `geom/` and `out/` folders. Geopackage (GPKG) conta
 `zonal_statistics.py` is a script to extract zonal statistics from raster input based on the list of features provided. Copy the script to the working directory to use it. Type `python zonal_statistics.py --help` to know how to use this script.
 
 ___
-Contact: <rp1y21@soton.ac.uk>
+Contact: Rhorom Priyatikanto | <rp1y21@soton.ac.uk>
