@@ -27,6 +27,12 @@ python get_buffer.py --input sample/points_1.csv --rad 5 --clip --output sample/
 # Create buffer from points listed in geopackage file
 python get_buffer.py --input sample/points_1.gpkg --rad 10 --clip --output sample/points
 
+# Delete items from the original geopackage file with IDs listed in the secondary input file
+python get_buffer.py --input sample/points_10km_clipped.gpkg --delete sample/points_1_edit.csv --rad 10 --clip --output sample/reduced
+
+# Revise items from the original geopackage file with coordinates listed in the secondary input file
+python get_buffer.py --input sample/points_10km_clipped.gpkg --edit sample/points_1_edit.csv --rad 10 --clip --output sample/revised
+
 # Update create file (points_10km_clipped.gpkg) by adding 
 # extra buffers from a new geopackage file (points_2.gpkg)
 python get_buffer.py --input sample/points_10km_clipped.gpkg --add sample/points_2.gpkg --clip --output sample/points
