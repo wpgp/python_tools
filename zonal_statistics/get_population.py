@@ -32,6 +32,7 @@ def get_population(zones, raster_path, min_area=1, interpolate='nearest'):
         zones['area'] = 1e-6*zones.geometry.to_crs(3857).area
     
     small = zones['area'] < min_area
+    area_large = zones[~small]['area'].values
     zones['pop'] = np.nan
     zones['cell_count'] = 0
     
@@ -39,7 +40,10 @@ def get_population(zones, raster_path, min_area=1, interpolate='nearest'):
     cnt_large = np.array([a['count'] for a in res])
     pop_large = np.array([a['pop'] for a in res])
 
-    fac = np.divide(zones[~small]['area'].values, cnt_large, where=(cnt_large>0))
+    #ONLY DO SCALING WHEN THE PIXEL COUNT IS BIGGER THAN THE BUFFER AREA
+    a = np.where(cnt_large > area_large)
+    fac = np.ones(len(area_large))
+    fac[a] = area_large[a]/cnt_large[a]
     pop_large = fac*np.array(pop_large)
     zones.loc[~small, 'pop'] = pop_large
     zones.loc[~small, 'cell_count'] = cnt_large

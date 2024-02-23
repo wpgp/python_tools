@@ -19,14 +19,26 @@ def usage():
     print('-a, --add                    Path to the file containing additional points')
     print('                             In this mode, additional buffers will be concatenated')
     print('                             to the existing geopackages (the input file).')
+    print('-d, --delete                 Path to the file containing IDs to be removed')
+    print('                             from the existing geopackages (the input file).')
+    print('-e, --edit                   Path to the file containing IDs of the points to')
+    print('                             be edited. New coordinates of the points should')
+    print('                             be provided (lon-lat columns).')
     print('-r, --rad                    Radius of the buffer in kilometer. Default value: 5')
     print('-o, --output                 Prefix name. Default value: output')
     print('-c, --clip                   Perform clipping to overlapping buffers. ')
+    print('--id                         ID column name')
     print('-h, --help                   Show this message and exit.')
     print('')
     print('Example: python get_buffer.py -i sample/points_1.csv -a sample/points_2.csv')
     print('                              -r 10 -o buffer -clip')
     print()
+
+def buffer_from_points(x, y, r, as_gdf=False):
+    geom = gpd.points_from_xy(x, y, crs=4326).to_crs(3857).buffer(r).to_crs(4326)
+    if as_gdf:
+        geom = gpd.GeoDataFrame(geometry=geom)
+    return geom
 
 def get_input(path_, rad_=5000):
     # Read input CSV or Excel containing coordinates of the locations.
@@ -37,6 +49,7 @@ def get_input(path_, rad_=5000):
     # as the geometry. The point location (lon, lat) is kept and the area
     # of the buffer is added.
 
+    print('radius (m):', rad_)
     if not(os.path.isfile(path_)):
         print('Input file is not found:', path_)
         sys.exit(1)
@@ -56,7 +69,7 @@ def get_input(path_, rad_=5000):
         
         lon = [c if c.lower() in ['lon','long','longitude','x'] else 'NA' for c in cols]
         lon = list(filter(('NA').__ne__, lon))[0]
-        
+
         gdf = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df[lon], df[lat]), crs='epsg:4326')
         buf = gdf.to_crs(3857).buffer(rad_)
         gdf = gdf.drop(columns=[lon,lat])
@@ -130,10 +143,78 @@ def non_overlaps(geom, line):
     
     return polygons[is_inside][0]
 
+def add_rows(gdf0, gdf1, clip=True, col='LOCATION_ID'):
+    # Updating the old buffer by adding new items from
+    # the additional file. The buffers affected by this 
+    # addition will be re-clipped.
+    gdf1['remark'] = 'new'
+    print(f'Add {len(gdf1)} items to the old buffers')
+    if clip:
+        pts = pd.concat([gdf0, gdf1], ignore_index=True).reset_index(drop=True)
+        vor = get_voronoi(pts)
+        print(f'Clipping additional buffers: {len(gdf1)}++')
+        for i,row in tqdm(gdf1.iterrows(), total=gdf1.shape[0]):
+            b0 = row['geometry'].bounds
+            g1 = vor.cx[b0[0]:b0[2], b0[1]:b0[3]]
+            if (len(g1) > 0):
+                non = non_overlaps(row.geometry, g1.geometry.tolist())
+                gdf1.loc[i,'geometry'] = non
+
+            g2 = gdf0.cx[b0[0]:b0[2], b0[1]:b0[3]]
+            for j,item in g2.iterrows():
+                b0 = item['geometry'].bounds
+                g1 = vor.cx[b0[0]:b0[2], b0[1]:b0[3]]
+                if len(g1) > 0:
+                    non = non_overlaps(item.geometry, g1.geometry.tolist())
+                    gdf0.loc[j,'geometry'] = non
+                    gdf0.loc[j,'remark'] = 'new'
+        
+    gdf0 = pd.concat([gdf0, gdf1], ignore_index=True).reset_index(drop=True)
+    gdf0 = gdf0.drop_duplicates(subset=[col], keep='last')
+    gdf0 = gpd.GeoDataFrame(gdf0, geometry='geometry')
+
+    return gdf0
+
+def del_rows(gdf0, gdf1, clip=True, col='LOCATION_ID', rad=5000):
+    # Deleting selected rows from the old buffer
+    # based on the IDs listed in the secondary input file. 
+    # The buffers affected by this process will be re-clipped.
+
+    sel = gdf0[col].isin(gdf1[col].values)
+    nsel = np.sum(sel)
+    if nsel < 1:
+        print(f'{col} for deletion is not in the old buffers')
+        return gdf0
+    
+    rem = gdf0[sel].copy()
+    gdf0 = gdf0[~sel].reset_index(drop=True)
+    vor0 = get_voronoi(gdf0)
+    print(f'Delete {np.sum(sel)} items from the old buffers')
+
+    if clip:
+        old_buf = buffer_from_points(gdf0.lon, gdf0.lat, rad, as_gdf=True)
+        rem_buf = buffer_from_points(rem.lon, rem.lat, rad, as_gdf=False)
+        print(f'Check affected buffers for re-clipping')
+        for buf in tqdm(rem_buf):
+            b0 = buf.bounds
+            g2 = old_buf.cx[b0[0]:b0[2], b0[1]:b0[3]]
+            for j,item in g2.iterrows():
+                b2 = item['geometry'].bounds
+                g1 = vor0.cx[b2[0]:b2[2], b2[1]:b2[3]]
+                if len(g1) > 0:
+                    non = non_overlaps(item.geometry, g1.geometry.tolist())
+                    gdf0.loc[j,'geometry'] = non
+                    gdf0.loc[j,'remark'] = 'new'
+        
+    return gdf0
+
 def get_buffer(argv=None):
     infile = 'input'
     addfile = None
+    delfile = None
+    edtfile = None
     rad = 5
+    id_col = 'LOCATION_ID'
     outfile = 'output'
     clip = False
 
@@ -162,6 +243,18 @@ def get_buffer(argv=None):
             if not(os.path.isfile(addfile)):
                 print('Additional file is not found:', addfile)
                 sys.exit(1)
+        elif(arg in ['-d', '--delete']):
+            delfile = argv[i+suf]
+            if not(os.path.isfile(delfile)):
+                print('Input file for deletion is not found:', delfile)
+                sys.exit(1)
+        elif(arg in ['-e', '--edit']):
+            edtfile = argv[i+suf]
+            if not(os.path.isfile(edtfile)):
+                print('Input file for edit is not found:', edtfile)
+                sys.exit(1)
+        elif(arg in ['--id']):
+            id_col = argv[i+suf]
         elif(arg in ['-r', '--rad']):
             rad = float(argv[i+suf])
         elif(arg in ['-o', '--output']):
@@ -172,67 +265,54 @@ def get_buffer(argv=None):
             usage()
             sys.exit(1)
 
-    gdf0, layer = get_input(infile, rad_=1000*rad)
-    gdf0['remark'] = 'old'
-    pts  = gdf0.copy()
+    gd0, layer = get_input(infile, rad_=1000*rad)
+    gd0['remark'] = 'old'
+    pts  = gd0.copy()
     
     if addfile:
         # Updating the old buffer by adding new items from
         # the additional file. The buffers affected by this 
         # addition will be re-clipped.
-
-        gdf1, _ = get_input(addfile, rad_=1000*rad)
-        gdf1['remark'] = 'new'
-        if clip:
-            pts = pd.concat([gdf0, gdf1], ignore_index=True).reset_index(drop=True)
-            vor = get_voronoi(pts)
-            print(f'Clipping additional buffers: {len(gdf1)}++')
-            for i,row in tqdm(gdf1.iterrows(), total=gdf1.shape[0]):
-                b0 = row['geometry'].bounds
-                g1 = vor.cx[b0[0]:b0[2], b0[1]:b0[3]]
-                if (len(g1) > 0):
-                    non = non_overlaps(row.geometry, g1.geometry.tolist())
-                    gdf1.loc[i,'geometry'] = non
-
-                g2 = gdf0.cx[b0[0]:b0[2], b0[1]:b0[3]]
-                n2 = len(g2)
-                for j,item in g2.iterrows():
-                    b0 = item['geometry'].bounds
-                    g1 = vor.cx[b0[0]:b0[2], b0[1]:b0[3]]
-                    if len(g1) > 0:
-                        non = non_overlaps(item.geometry, g1.geometry.tolist())
-                        gdf0.loc[j,'geometry'] = non
-                        gdf0.loc[j,'remark'] = 'new'
-            
-        gdf0 = pd.concat([gdf0, gdf1], ignore_index=True).reset_index(drop=True)
-        gdf0 = gdf0.drop_duplicates(subset=['LOCATION_ID'], keep='last')
-        gdf0 = gpd.GeoDataFrame(gdf0, geometry='geometry')
-        
+        gd1, _ = get_input(addfile, rad_=1000*rad)
+        gd1.to_file('tmp.gpkg')
+        gd0 = add_rows(gd0, gd1, clip=clip, col=id_col)
+    elif delfile:
+        # Updating the old buffer by deleting items listed in
+        # the secondary input file. The buffers affected by this 
+        # process will be re-clipped.
+        gd1 = pd.read_csv(delfile)
+        gd0 = del_rows(gd0, gd1, clip=clip, col=id_col, rad=1000*rad)
+    elif edtfile:
+        # Updating the coordinates of the items listed in
+        # the secondary input file. The buffers affected by this 
+        # process will be re-clipped.
+        gd1, _ = get_input(edtfile, rad_=1000*rad)
+        gd0 = del_rows(gd0, gd1, clip=clip, col=id_col, rad=1000*rad)
+        gd0 = add_rows(gd0, gd1, clip=clip, col=id_col)
     elif clip:
-        # Perform clipping to the buffers to avoid overlaps.
-        
+        # Perform clipping to the buffers to avoid overlaps.        
         vor = get_voronoi(pts)
-        print(f'Clipping buffers: {len(gdf0)}')
-        for i,row in tqdm(gdf0.iterrows(), total=gdf1.shape[0]):
+        print(f'Clipping buffers: {len(gd0)}')
+        for i,row in tqdm(gd0.iterrows(), total=gd0.shape[0]):
             b0 = row['geometry'].bounds
             g1 = vor.cx[b0[0]:b0[2], b0[1]:b0[3]]
             if (len(g1) > 0):
                 non = non_overlaps(row.geometry, g1.geometry.tolist())
-                gdf0.loc[i,'geometry'] = non
-        gdf0['remark'] = 'new'
+                gd0.loc[i,'geometry'] = non
+        gd0['remark'] = 'new'
 
     suffix = ''
     if clip:
         suffix = '_clipped'
         
     print('Processed buffers:')
-    print('Old:', np.sum(gdf0['remark'] == 'old'))
-    print('New:', np.sum(gdf0['remark'] == 'new'))
+    print('Old:', np.sum(gd0['remark'] == 'old'))
+    print('New:', np.sum(gd0['remark'] == 'new'))
 
-    gdf0 = gdf0.reset_index(drop=True)
-    gdf0['area'] = 1e-6*gdf0.to_crs(3857).area
+    gd0 = gd0.reset_index(drop=True)
+    gd0['area'] = 1e-6*gd0.to_crs(3857).area
     print('Saving geometry file')    
-    gdf0.to_file(f'{outfile}_{rad:.0f}km{suffix}.gpkg', index=False, 
+    gd0.to_file(f'{outfile}_{rad:.0f}km{suffix}.gpkg', index=False, 
                  mode='w', driver='GPKG', layer=layer)
     
 if __name__ == '__main__':
