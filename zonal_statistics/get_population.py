@@ -70,10 +70,11 @@ def main():
             infile = f'geom/buffer_{rad:.0f}km{buffer_type}.gpkg'
             outfile = f'out/pop_{rad:.0f}km{buffer_type}.csv'
             
-            if do_update:
-                param = {'input':infile, 'add':location, 'rad':rad, 'output':'geom/buffer'}
-            else:
+            if processing_mode == 'new':
                 param = {'input':location, 'rad':rad, 'output':'geom/buffer'}
+            else:
+                param = {'input':infile, 'rad':rad, 'output':'geom/buffer', 'id':id_col}
+                param[processing_mode] = location
             if buffer_type == '_clipped':
                 param['clip'] = True
             
@@ -83,15 +84,28 @@ def main():
             #    buffer['remark'] = 'old'
 
             print('Processing:', outfile)
-            if do_update:
-                old_df = pd.read_csv(outfile)
-                old_df['remark'] = 'old'
-                buffer = buffer[buffer['remark'] == 'new']
-                if (len(buffer) < 1):
-                    print('New data is not found. No update is performed.')
-                    return
+            if processing_mode == 'new':
                 pop_df = pd.DataFrame(buffer).drop(columns=['geometry'])
             else:
+                old_df = pd.read_csv(outfile)
+                old_df['remark'] = 'old'
+                if processing_mode == 'delete':
+                    del_df = pd.read_csv(location)
+                    sel = old_df[id_col].isin(del_df[id_col].values)
+                    if len(sel) > 0:
+                        old_df = old_df[~sel].reset_index(drop=True)                        
+
+                buffer = buffer[buffer['remark'] == 'new']
+                if (len(buffer) < 1):
+                    if processing_mode == 'delete':
+                        print(f'Deleting {np.sum(sel)} items')
+                        print('Saving population table:', outfile)
+                        old_df.to_csv(outfile, index=False)
+                    if versioning:
+                        today = date.today().strftime("%Y%m%d")
+                        dated_outfile = f'{outfile[:-4]}_{today}.csv'
+                        old_df.to_csv(dated_outfile, index=False)
+                    continue
                 pop_df = pd.DataFrame(buffer).drop(columns=['geometry'])
 
             print('Number of zones:', len(buffer))
@@ -109,9 +123,9 @@ def main():
                 pop_df[f'pop_{year}'] = pop['pop'].values
                 pop_df['cell_count'] = pop['cell_count'].values
                 
-            if do_update:
+            if processing_mode != 'new':
                 pop_df = pd.concat([old_df, pop_df], ignore_index=True)
-                pop_df = pop_df.drop_duplicates(subset=['LOCATION_ID'], keep='last')
+                pop_df = pop_df.drop_duplicates(subset=[id_col], keep='last')
 
             print('Saving population table:', outfile)
             pop_df.to_csv(outfile, index=False)

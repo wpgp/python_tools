@@ -49,7 +49,7 @@ def get_input(path_, rad_=5000):
     # as the geometry. The point location (lon, lat) is kept and the area
     # of the buffer is added.
 
-    print('radius (m):', rad_)
+    print('Radius (m):', rad_)
     if not(os.path.isfile(path_)):
         print('Input file is not found:', path_)
         sys.exit(1)
@@ -305,15 +305,17 @@ def get_buffer(argv=None):
     if clip:
         suffix = '_clipped'
         
+    new_items = np.sum(gd0['remark'] == 'new')
     print('Processed buffers:')
     print('Old:', np.sum(gd0['remark'] == 'old'))
-    print('New:', np.sum(gd0['remark'] == 'new'))
+    print('New:', new_items)
 
     gd0 = gd0.reset_index(drop=True)
     gd0['area'] = 1e-6*gd0.to_crs(3857).area
-    print('Saving geometry file')    
-    gd0.to_file(f'{outfile}_{rad:.0f}km{suffix}.gpkg', index=False, 
-                 mode='w', driver='GPKG', layer=layer)
+    if new_items > 0:
+        print('Saving geometry file')    
+        gd0.to_file(f'{outfile}_{rad:.0f}km{suffix}.gpkg', index=False, 
+                    mode='w', driver='GPKG', layer=layer)
     
 if __name__ == '__main__':
     sys.exit(get_buffer())
