@@ -1,10 +1,10 @@
 ### CONFIGURATION ###
-year_start = 2020
-year_end = 2023
-radii = [1,5]
-location = 'sample/new_20240119.csv'
-raster_file = '../pop/constrained/global_ppp_{year}_1km_UNadj_constrained.tif'
-processing_mode = 'delete' #['new','add','delete','edit']
+year_start = 2021
+year_end = 2021
+radii = [10]
+location = 'sample/points_1_edit.csv'
+raster_file = '../../pop/global_ppp_{year}_1km_UNadj_constrained.tif'
+processing_mode = 'edit'
 clipped_only = True
 versioning = True
 id_col = 'LOCATION_ID'

@@ -27,15 +27,10 @@ python get_buffer.py --input sample/points_1.csv --rad 5 --clip --output sample/
 # Create buffer from points listed in geopackage file
 python get_buffer.py --input sample/points_1.gpkg --rad 10 --clip --output sample/points
 
-# Delete items from the original geopackage file with IDs listed in the secondary input file
-python get_buffer.py --input sample/points_10km_clipped.gpkg --delete sample/points_1_edit.csv --rad 10 --clip --output sample/reduced
+# Revise items from the original geopackage file with IDs listed in the secondary input file
+python get_buffer.py --input sample/points_10km_clipped.gpkg --edit sample/points_1_edit.csv --rad 10 --clip --output sample/reduced
 
-# Revise items from the original geopackage file with coordinates listed in the secondary input file
-python get_buffer.py --input sample/points_10km_clipped.gpkg --edit sample/points_1_edit.csv --rad 10 --clip --output sample/revised
-
-# Update create file (points_10km_clipped.gpkg) by adding 
-# extra buffers from a new geopackage file (points_2.gpkg)
-python get_buffer.py --input sample/points_10km_clipped.gpkg --add sample/points_2.gpkg --clip --output sample/points
+The secondary input file is CSV with *remark* column defining the process applied to the item. It can either be *add*, *remove*/*delete*, or *edit*. See /sample/points_1_edit.csv as an example.
 ```
 
 ### Extracting Population Count from WorldPop Dataset
@@ -44,9 +39,9 @@ WorldPop produces global population count at 100-m and 1-km resolutions. An exte
 Provided this gridded/raster data and the vector data containing the regions of interest (or buffers), the total population at each region can be extracted using `get_population.py`. This script comes together with `config.py` which defines several parameters required for the process. There are:
 - `year_start` and `year_end` [integer]: WorldPop provides a global gridded population dataset from 2015 to 2023. Users can define the dataset epoch from which the extraction is performed, from `year_start` to `year_end`.
 - `radii` [list of integer]: radii of circular buffers in kilometres.
-- `location` [path-like]: path to the file containing the locations of interest or the buffers around the locations. The accepted file should be CSV, XLS, SHP, GPKG, or GEOJSON. The file should contain either the `geometry` or `lat` and `lon` columns. If `do_update` is true, this variable defines the path to the file containing new locations to be added on the _default_ geometry files (`geom/buffer*.gpkg`) and population tables (`pop_*.csv`).
+- `location` [path-like]: path to the file containing the locations of interest or the buffers around the locations. The accepted file should be CSV, XLS, SHP, GPKG, or GEOJSON. The file should contain either the `geometry` or `lat` and `lon` columns. If `processing_mode` is *edit*, this variable defines the path to the secondary file containing locations to edit the _default_ geometry files (`geom/buffer*.gpkg`) and population tables (`pop_*.csv`).
 - `raster_file` [path-like]: path to the population raster file (GeoTIFF format).
-- `do_update` [boolean]: if true, the script will read `location_new` and update the population table.
+- `processing_mode` [string]: either *new* or *edit*.
 - `clipped_only` [boolean]: if false, the script extracts the population count from both clipped and unclipped circular buffers.
 - `versioning` [boolean]: if true, the script will save CSV files with a suffix defining the date of creation.
 

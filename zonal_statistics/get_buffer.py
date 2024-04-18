@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import geopandas as gpd
 import fiona
+
 from tqdm import tqdm
 from scipy.spatial import Voronoi
 from shapely.geometry import LineString
@@ -16,21 +17,17 @@ def usage():
     print('Usage: python get_buffer.py -i path.csv -r 1000 [OPTIONS]')
     print('Options:')
     print('-i, --input       [required] Path to the input file')
-    print('-a, --add                    Path to the file containing additional points')
-    print('                             In this mode, additional buffers will be concatenated')
-    print('                             to the existing geopackages (the input file).')
-    print('-d, --delete                 Path to the file containing IDs to be removed')
-    print('                             from the existing geopackages (the input file).')
     print('-e, --edit                   Path to the file containing IDs of the points to')
-    print('                             be edited. New coordinates of the points should')
-    print('                             be provided (lon-lat columns).')
+    print('                             be added, edited, or removed. Coordinates of')
+    print('                             the points should be provided (lon-lat columns).')
+    print('                             Remark column should either be add, edit, remove.')
     print('-r, --rad                    Radius of the buffer in kilometer. Default value: 5')
     print('-o, --output                 Prefix name. Default value: output')
     print('-c, --clip                   Perform clipping to overlapping buffers. ')
     print('--id                         ID column name')
     print('-h, --help                   Show this message and exit.')
     print('')
-    print('Example: python get_buffer.py -i sample/points_1.csv -a sample/points_2.csv')
+    print('Example: python get_buffer.py -i sample/points_1.csv -e sample/points_1_edit.csv')
     print('                              -r 10 -o buffer -clip')
     print()
 
@@ -208,10 +205,63 @@ def del_rows(gdf0, gdf1, clip=True, col='LOCATION_ID', rad=5000):
         
     return gdf0
 
+def edt_rows(gdf0, gdf1, clip=True, col='LOCATION_ID', rad=5000):
+    # Adding, editing, or removing rows from the secondary input file. 
+    # The buffers affected by this process will be re-clipped.
+
+    to_rem = gdf1[gdf1['remark'].isin(['remove', 'delete', 'edit'])].copy().reset_index(drop=True)
+    to_add = gdf1[gdf1['remark'].isin(['add', 'new', 'edit'])].copy().reset_index(drop=True)
+    
+    sel = gdf0[col].isin(to_rem[col].values)
+    nsel = np.sum(sel)
+    if nsel < 1:
+        print(f'{col} for deletion is not in the old buffers')
+        return gdf0
+    else:
+        print(f'Delete {nsel} items from the old buffers')
+    
+    gdf0 = gdf0[~sel].reset_index(drop=True)
+
+    if clip:
+        old_buf = buffer_from_points(gdf0.lon.values, gdf0.lat.values, rad, as_gdf=True)
+        
+        #edt_ = pd.concat([rem, to_add], ignore_index=True)
+        edt_buf = buffer_from_points(gdf1.lon.values, gdf1.lat.values, rad, as_gdf=False)
+
+        new_buf = pd.concat([gdf0, to_add], ignore_index=True).reset_index(drop=True)
+        print(len(new_buf))
+        vor = get_voronoi(new_buf)
+    
+        print(f'Check affected buffers for re-clipping')
+        for buf in tqdm(edt_buf):
+            b0 = buf.bounds
+            g2 = old_buf.cx[b0[0]:b0[2], b0[1]:b0[3]]
+            for j,item in g2.iterrows():
+                b2 = item['geometry'].bounds
+                g1 = vor.cx[b2[0]:b2[2], b2[1]:b2[3]]
+                gdf0.loc[j,'remark'] = 'reclip'
+                if len(g1) > 0:
+                    non = non_overlaps(item.geometry, g1.geometry.tolist())
+                    gdf0.loc[j,'geometry'] = non
+                else:
+                    gdf0.loc[j,'geometry'] = item.geometry
+        
+        print(f'Clipping newly added buffers: {len(to_add)}++')
+        for i,row in tqdm(to_add.iterrows(), total=to_add.shape[0]):
+            b0 = row['geometry'].bounds
+            g1 = vor.cx[b0[0]:b0[2], b0[1]:b0[3]]
+            if (len(g1) > 0):
+                non = non_overlaps(row.geometry, g1.geometry.tolist())
+                to_add.loc[i,'geometry'] = non
+        
+    gdf0 = pd.concat([gdf0, to_add], ignore_index=True).reset_index(drop=True)
+    #gdf0 = gdf0.drop_duplicates(subset=[col], keep='last')
+    #gdf0 = gpd.GeoDataFrame(gdf0, geometry='geometry')
+
+    return gdf0
+
 def get_buffer(argv=None):
     infile = 'input'
-    addfile = None
-    delfile = None
     edtfile = None
     rad = 5
     id_col = 'LOCATION_ID'
@@ -238,16 +288,6 @@ def get_buffer(argv=None):
             if not(os.path.isfile(infile)):
                 print('Input file is not found:', infile)
                 sys.exit(1)
-        elif(arg in ['-a', '--add']):
-            addfile = argv[i+suf]
-            if not(os.path.isfile(addfile)):
-                print('Additional file is not found:', addfile)
-                sys.exit(1)
-        elif(arg in ['-d', '--delete']):
-            delfile = argv[i+suf]
-            if not(os.path.isfile(delfile)):
-                print('Input file for deletion is not found:', delfile)
-                sys.exit(1)
         elif(arg in ['-e', '--edit']):
             edtfile = argv[i+suf]
             if not(os.path.isfile(edtfile)):
@@ -267,30 +307,17 @@ def get_buffer(argv=None):
 
     gd0, layer = get_input(infile, rad_=1000*rad)
     gd0['remark'] = 'old'
-    pts  = gd0.copy()
     
-    if addfile:
-        # Updating the old buffer by adding new items from
-        # the additional file. The buffers affected by this 
-        # addition will be re-clipped.
-        gd1, _ = get_input(addfile, rad_=1000*rad)
-        gd1.to_file('tmp.gpkg')
-        gd0 = add_rows(gd0, gd1, clip=clip, col=id_col)
-    elif delfile:
-        # Updating the old buffer by deleting items listed in
-        # the secondary input file. The buffers affected by this 
-        # process will be re-clipped.
-        gd1 = pd.read_csv(delfile)
-        gd0 = del_rows(gd0, gd1, clip=clip, col=id_col, rad=1000*rad)
-    elif edtfile:
+    if edtfile:
         # Updating the coordinates of the items listed in
         # the secondary input file. The buffers affected by this 
         # process will be re-clipped.
         gd1, _ = get_input(edtfile, rad_=1000*rad)
-        gd0 = del_rows(gd0, gd1, clip=clip, col=id_col, rad=1000*rad)
-        gd0 = add_rows(gd0, gd1, clip=clip, col=id_col)
+        gd0 = edt_rows(gd0, gd1, clip=clip, col=id_col, rad=1000*rad)
+
     elif clip:
         # Perform clipping to the buffers to avoid overlaps.        
+        pts  = gd0.copy()
         vor = get_voronoi(pts)
         print(f'Clipping buffers: {len(gd0)}')
         for i,row in tqdm(gd0.iterrows(), total=gd0.shape[0]):
@@ -304,18 +331,12 @@ def get_buffer(argv=None):
     suffix = ''
     if clip:
         suffix = '_clipped'
-        
-    new_items = np.sum(gd0['remark'] == 'new')
-    print('Processed buffers:')
-    print('Old:', np.sum(gd0['remark'] == 'old'))
-    print('New:', new_items)
-
+    
     gd0 = gd0.reset_index(drop=True)
     gd0['area'] = 1e-6*gd0.to_crs(3857).area
-    if new_items > 0:
-        print('Saving geometry file')    
-        gd0.to_file(f'{outfile}_{rad:.0f}km{suffix}.gpkg', index=False, 
-                    mode='w', driver='GPKG', layer=layer)
+    print('Saving geometry file', outfile)    
+    gd0.to_file(f'{outfile}_{rad:.0f}km{suffix}.gpkg', index=False, 
+                mode='w', driver='GPKG', layer=layer)
     
 if __name__ == '__main__':
     sys.exit(get_buffer())

@@ -89,13 +89,14 @@ def main():
             else:
                 old_df = pd.read_csv(outfile)
                 old_df['remark'] = 'old'
-                if processing_mode == 'delete':
+                if processing_mode == 'edit':
                     del_df = pd.read_csv(location)
+                    del_df = del_df[del_df.remark.isin(['remove'])]
                     sel = old_df[id_col].isin(del_df[id_col].values)
                     if len(sel) > 0:
                         old_df = old_df[~sel].reset_index(drop=True)                        
 
-                buffer = buffer[buffer['remark'] == 'new']
+                buffer = buffer[buffer['remark'] != 'old']
                 if (len(buffer) < 1):
                     if processing_mode == 'delete':
                         print(f'Deleting {np.sum(sel)} items')
@@ -108,9 +109,9 @@ def main():
                     continue
                 pop_df = pd.DataFrame(buffer).drop(columns=['geometry'])
 
-            print('Number of zones:', len(buffer))
+            print('Number of (updated) zones:', len(buffer))
             
-            pop_df['remark'] = 'new'
+            pop_df['remark'] = 'update'
             for year in range(year_start, year_end+1):
                 pop_raster = raster_file.format(year=year)
                 
